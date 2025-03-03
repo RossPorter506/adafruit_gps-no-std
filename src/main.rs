@@ -1,8 +1,8 @@
-use adafruit_gps::{Gps, GpsSentence};
-use adafruit_gps::NmeaOutput;
-
+#[cfg(feature="std")]
 fn main() {
-    let mut gps = Gps::new("/dev/serial0", "9600");
+    use adafruit_gps::{Gps, GpsSentence};
+    use adafruit_gps::NmeaOutput;
+    let mut gps = Gps::new_from_device("/dev/serial0", 9600);
     gps.pmtk_314_api_set_nmea_output(NmeaOutput { gga: 1, gsa: 1, gsv: 1, gll: 1, rmc: 1, vtg: 1, pmtkchn_interval: 1 });
     let _r = gps.pmtk_220_set_nmea_updaterate("1000");
     loop {
@@ -21,11 +21,13 @@ fn main() {
                 println!("PDOP:{}, VDOP:{}, HDOP:{}",
                          sentence.pdop.unwrap_or(0.0), sentence.vdop.unwrap_or(0.0), sentence.hdop.unwrap_or(0.0))
             }
-            _ => {
-                ()
-            }
+            _ => ()
         }
         values.append_to("main_file");
     }
 }
 
+#[cfg(not(feature="std"))]
+fn main() {
+    panic!("This library can only be built as an executable with the 'std' feature enabled.")
+}

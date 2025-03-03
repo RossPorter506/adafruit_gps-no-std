@@ -19,8 +19,9 @@ name = "main"
 path = "src/main.rs"
 
 [features]
+default = ["std"]
 bench = []
-
+std = []
 [workspace]
 members = [
     "geodesy",
@@ -29,6 +30,7 @@ members = [
 
 [dependencies]
 serialport = "3.3.0"
+embedded-io = "0.6"
 serde = {version = "1.0.110", features = ["derive"]}
 bincode = "1.2.1"
 

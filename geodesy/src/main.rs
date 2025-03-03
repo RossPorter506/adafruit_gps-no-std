@@ -4,7 +4,6 @@
 use adafruit_gps::GpsSentence;
 use geodesy::position::{GpsSentenceConverter, Position};
 
-
 fn main() {
     // This code converts gps data into coordinate data and then produces a klm file which can be
     // uploaded to google earth for visualisation.
@@ -12,13 +11,10 @@ fn main() {
     let mut mod_vec = Vec::new();
     let vec = GpsSentence::read_from(format!("./feldspar5-{}_gps", flight_num).as_str());
     for item in vec.iter() {
-        match item {
-            GpsSentence::GGA(s) => {
-                let mut new_item = s.clone();
-                new_item.geoidal_sep = Some(47.0);
-                mod_vec.push(GpsSentence::GGA(new_item))
-            }
-            _ => {}
+        if let GpsSentence::GGA(s) = item {
+            let mut new_item = s.clone();
+            new_item.geoidal_sep = Some(47.0);
+            mod_vec.push(GpsSentence::GGA(new_item))
         }
     }
     let coords = mod_vec.to_coords(true);

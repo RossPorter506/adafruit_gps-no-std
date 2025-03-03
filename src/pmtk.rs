@@ -21,11 +21,14 @@
 
 pub mod send_pmtk {
     //! Contains all the pmtk commands that can be sent.
-    use std::str;
+    use core::str;
 
+    #[cfg(feature="std")]
     use serialport::{self, ClearBuffer};
 
-    use super::super::open_gps::gps::{Gps,GpsSentence, is_valid_checksum, open_port, PortConnection};
+    use super::super::open_gps::gps::{Gps, is_valid_checksum, PortConnection};
+    #[cfg(feature="std")]
+    use super::super::open_gps::gps::{open_port, GpsSentence};
 
     #[derive(Debug, PartialEq)]
     /// # PMTK001 return values
@@ -128,6 +131,7 @@ pub mod send_pmtk {
     /// Returns BaudRateResults enum: Success(baud rate), Fail.
     ///
     /// Use a battery to maintain settings as this method takes a while to run and is error prone.
+    #[cfg(feature="std")]
     pub fn set_baud_rate(baud_rate: &str, port_name: &str) -> BaudRateResults {
         // stty -F /dev/serial0 9600 clocal cread cs8 -cstopb -parenb
 
@@ -138,8 +142,7 @@ pub mod send_pmtk {
         // For some reason there are invalid bytes in front of what should be the correct baud rate.
         // So read 200 bytes, and ditch the first 100.
         for rate in possible_baud_rates.iter() {
-            let port = open_port(port_name, *rate);
-            let mut gps = Gps { port };
+            let mut gps = Gps::new_from_device(port_name, *rate);
             // Try reading 5 lines.
             for _ in 0..5 {
                 let line = gps.update();
@@ -162,14 +165,15 @@ pub mod send_pmtk {
     }
 
     /// This implies all the traits to do with sending commands to the gps.
-    impl Gps {
+    impl<'a, E: embedded_io::Error> Gps<'a, E> {
         #[allow(unused_must_use)] // self.port.write is not used
         /// Send the PMTK command.
         pub fn send_command(&mut self, cmd: &str) {
             //! Input: no $ and no *checksum.
             let cmd = add_checksum(cmd.to_string());
             let byte_cmd = cmd.as_bytes();
-            self.port.clear(serialport::ClearBuffer::Output);
+            #[cfg(feature="std")]
+            self.port.clear(serialport::ClearBuffer::Output); // Embedded Serial has no buffer
             self.port.write_all(byte_cmd);
         }
 

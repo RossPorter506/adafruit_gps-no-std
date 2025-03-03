@@ -76,10 +76,17 @@
 //!
 //!
 
+#![no_std]
+#[cfg(feature="std")]
+extern crate std;
 
 pub use crate::nmea::{gga, gll, gsa, gsv, rmc, vtg};
 pub use crate::open_gps::gps::{Gps, GpsSentence};
-pub use crate::pmtk::send_pmtk::{set_baud_rate, NmeaOutput};
+pub use crate::pmtk::send_pmtk::NmeaOutput;
+#[cfg(not(feature="std"))]
+pub use crate::open_gps::gps::serial::EmbeddedSerial;
+#[cfg(feature="std")]
+pub use crate::pmtk::send_pmtk::set_baud_rate;
 
 mod nmea;
 mod pmtk;

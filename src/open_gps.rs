@@ -6,13 +6,14 @@
 pub mod gps {
     //! This is the main module around which all other modules interact.
     //! It contains the Gps structure, open port and GpsData that are central to using this module.
-    use std::fs::{File, OpenOptions};
-    use std::io::{Read, Write};
-    use std::str;
-    use std::time::{Duration, SystemTime};
+    use core::{str, time::Duration};
+    #[cfg(feature="std")]
+    use std::{fs::{File, OpenOptions}, io::{Read, Write}};
 
-    use bincode::serialize;
     use serde::{Deserialize, Serialize};
+    #[cfg(feature="std")]
+    use bincode::serialize;
+    #[cfg(feature="std")]
     use serialport::prelude::*;
 
     use crate::nmea::gga::{GgaData, parse_gga};
@@ -24,7 +25,8 @@ pub mod gps {
     use crate::nmea::vtg::{parse_vtg, VtgData};
 
     /// Opens the port to the GPS, probably /dev/serial0
-        /// Default baud rate is 9600
+    /// Default baud rate is 9600
+    #[cfg(feature="std")]
     pub fn open_port(port_name: &str, baud_rate: u32) -> Box<dyn SerialPort> {
         let settings = SerialPortSettings {
             baud_rate,
@@ -92,18 +94,87 @@ pub mod gps {
         InvalidSentence,
     }
 
+    #[cfg(feature="std")]
+    pub mod serial {
+        use std::{marker::PhantomData, ops::{Deref, DerefMut}};
+
+        use super::*;
+        pub struct Serial<'a,E> {
+            pub port: Box<dyn SerialPort>,
+            phantom_lifetime: PhantomData<&'a ()>,  // Added to match no-std version
+            phantom_type: PhantomData<E>,           // Added to match no-std version
+        }
+        impl<E> Deref for Serial<'_, E> {
+            type Target = Box<dyn SerialPort>;
+        
+            fn deref(&self) -> &Self::Target {
+                &self.port
+            }
+        }
+        // Make Serial transparent, as if we were accessing Box<dyn SerialPort> directly.
+        impl<E> DerefMut for Serial<'_,E> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.port
+            }
+        }
+        impl<E> Serial<'_, E> {
+            pub fn new(port: &str, baud_rate: u32) -> Self {
+                Serial { port: open_port(port, baud_rate), phantom_lifetime: PhantomData, phantom_type: PhantomData }
+            }
+        }
+    }
+    #[cfg(not(feature="std"))]
+    pub mod serial {
+        /// An (automatically implemented) trait for any type that implements embedded-io::Write and ::Read
+        pub trait EmbeddedSerial: embedded_io::Read + embedded_io::Write {}
+        // Automatically implement EmbeddedSerial for implementations of embedded-io
+        impl<T: embedded_io::Read + embedded_io::Write> EmbeddedSerial for T {} 
+        pub struct Serial<'a, E: embedded_io::Error> {
+            pub port: &'a mut dyn EmbeddedSerial<Error=E>,
+        }
+        // I tried to get Deref/DerefMut working with this, but no luck. Just implement some wrappers instead.
+        impl<E: embedded_io::Error> Serial<'_, E> {
+            pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, E>{
+                embedded_io::Read::read(&mut self.port, buf)
+            }
+            pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), embedded_io::ReadExactError<E>> {
+                embedded_io::Read::read_exact(&mut self.port, buf)
+            }
+            pub fn write(&mut self, buf: &[u8]) -> Result<usize, E> {
+                embedded_io::Write::write(&mut self.port, buf)
+            }
+            pub fn flush(&mut self) -> Result<(), E> {
+                embedded_io::Write::flush(&mut self.port)
+            }
+            pub fn write_all(&mut self, buf: &[u8]) -> Result<(), E> {
+                embedded_io::Write::write_all(&mut self.port, buf)
+            }
+        }
+        
+    }
+    use serial::Serial;
+    #[cfg(not(feature="std"))]
+    use serial::EmbeddedSerial;
+
     /// This is the main struct around which all commands are centered. It allows for communication
     /// with the GPS module via the open port.
     ///
     /// Satellite data: true if you want the individual satellite data
     /// Navigation data: true if you want the navigation data (lat, long, etc)
-    pub struct Gps {
-        pub port: Box<dyn SerialPort>,
+    pub struct Gps<'a, E: embedded_io::Error> {
+        pub port: Serial<'a, E>,
     }
 
-    impl Gps {
-        pub fn new(port: &str, baud_rate: &str) -> Gps {
-            Gps { port: open_port(port, baud_rate.parse().unwrap()) }
+    #[cfg(feature="std")]
+    impl Gps<'_, core::convert::Infallible> {
+        pub fn new_from_device(port: &str, baud_rate: u32) -> Gps<'_, std::convert::Infallible> {
+            Gps { port: Serial::new(port, baud_rate) }
+        }
+    }
+    impl<'a, E: embedded_io::Error> Gps<'a, E> {
+        #[cfg(not(feature="std"))]
+        pub fn new_from_peripheral<'serial:'a> (port: &'serial mut dyn EmbeddedSerial<Error=E>) -> Self {
+            Gps { port: Serial{port} }
         }
 
         /// Reads a full sentence from the serial buffer, returns a String.
@@ -120,7 +191,7 @@ pub mod gps {
             let mut output: Vec<u8> = Vec::new();
             let p = &mut self.port;
             let mut cont = true;
-            let start = SystemTime::now();
+            let start = std::time::SystemTime::now();
             while cont {
                 // If there is no connection, this match statement is looped over with a 1 second time out
                 // as given by the port open.
@@ -200,6 +271,7 @@ pub mod gps {
         /// Reads a bytes file of structs to a vector.
         ///
         /// Benches at 263,860ns to read a 1,000 long vec.
+        #[cfg(feature="std")]
         pub fn read_from(file: &str) -> Vec<GpsSentence> {
             let mut f = File::open(file).expect("No file found");
             let mut buffer = Vec::new();
@@ -231,6 +303,7 @@ pub mod gps {
         /// or when iterating over a vector.
         ///
         /// Append with a \n (10) byte at the end so it can be read back into a vector.
+        #[cfg(feature="std")]
         pub fn append_to(self, file: &str) {
             let mut f = OpenOptions::new().append(true).create(true).open(file).unwrap();
             // has to open a file if none exist.
