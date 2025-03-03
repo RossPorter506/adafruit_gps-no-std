@@ -49,11 +49,11 @@ pub mod parse_nmea {
         let first_half: Vec<&str> = degrees.split('.').collect();
 
         if first_half[0].len() == 4 {
-            deg = (&degrees[0..2]).parse::<f32>().unwrap();
-            minutes = ((&degrees[2..]).parse::<f32>().unwrap()) / 60.0;
+            deg = degrees[0..2].parse::<f32>().unwrap();
+            minutes = (degrees[2..].parse::<f32>().unwrap()) / 60.0;
         } else {
-            deg = (&degrees[0..3]).parse::<f32>().unwrap();
-            minutes = ((&degrees[3..]).parse::<f32>().unwrap()) / 60.0;
+            deg = degrees[0..3].parse::<f32>().unwrap();
+            minutes = (degrees[3..].parse::<f32>().unwrap()) / 60.0;
         }
 
         let r: f32 = deg + minutes;

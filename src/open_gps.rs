@@ -56,7 +56,7 @@ pub mod gps {
             return false;
         }
 
-        match u8::from_str_radix(&checksum, 16) {
+        match u8::from_str_radix(checksum, 16) {
             // Convert to base 16.
             Ok(expected_checksum) => {
                 let mut actual: u8 = 0;
