@@ -118,10 +118,10 @@ impl Position for Vec<Coordinate> {
 
         let latitudes: Vec<f32> = positions.clone().into_iter().map(|x| x.0).collect();
         let longitudes: Vec<f32> = positions.clone().into_iter().map(|x| x.1).collect();
-        let min_long = longitudes.iter().cloned().fold(0. / 0., f32::min);
-        let max_long = longitudes.iter().cloned().fold(0. / 0., f32::max);
-        let min_lat = latitudes.iter().cloned().fold(0. / 0., f32::min);
-        let max_lat = latitudes.iter().cloned().fold(0. / 0., f32::max);
+        let min_long = longitudes.iter().cloned().fold(f32::NAN, f32::min);
+        let max_long = longitudes.iter().cloned().fold(f32::NAN, f32::max);
+        let min_lat = latitudes.iter().cloned().fold(f32::NAN, f32::min);
+        let max_lat = latitudes.iter().cloned().fold(f32::NAN, f32::max);
 
         // // x axis is
         // let _x_axis = inverse_vincenty(
