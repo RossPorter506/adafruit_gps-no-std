@@ -65,7 +65,7 @@ pub mod gps {
                     actual ^= *i;
                 }
                 return actual == expected_checksum;
-                }
+            }
             Err(_e) => return false,
         }
     }
@@ -139,11 +139,12 @@ pub mod gps {
                 }
             }
             let string = str::from_utf8(&output);
-            return if string.is_ok() {
-                PortConnection::Valid(string.unwrap().to_string())
-            } else {
+            if let Ok(str) = string {
+                PortConnection::Valid(str.to_string())
+            }
+            else {
                 PortConnection::InvalidBytes(output)
-            };
+            }
         }
 
         /// Keeps reading sentences until all the required sentences are read.
@@ -178,13 +179,10 @@ pub mod gps {
                             for _message in 1..number_of_messages { // If number of messages is 1, this is all skipped.
                                 // Read lines and add it for each message.
                                 let line = self.read_line();
-                                match line {
-                                    PortConnection::Valid(line) => {
-                                        let sentence = parse_sentence(line.as_str());
-                                        let sentence = sentence.unwrap();
-                                        gsv_values.append(parse_gsv(sentence).as_mut())
-                                    }
-                                    _ => ()
+                                if let PortConnection::Valid(line) = line {
+                                    let sentence = parse_sentence(line.as_str());
+                                    let sentence = sentence.unwrap();
+                                    gsv_values.append(parse_gsv(sentence).as_mut())
                                 };
                             }
                             return GpsSentence::GSV(gsv_values);
@@ -209,11 +207,8 @@ pub mod gps {
             let split = buffer.split(|num| num == &10);
             let mut struct_vec: Vec<GpsSentence> = Vec::new();
             for item in split {
-                match bincode::deserialize(item) {
-                    Ok(t) => {
-                        struct_vec.push(t)
-                    }
-                    _ => {}
+                if let Ok(t) = bincode::deserialize(item) {
+                    struct_vec.push(t)
                 }
             }
 
