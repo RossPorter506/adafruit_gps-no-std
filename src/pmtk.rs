@@ -379,7 +379,7 @@ pub mod send_pmtk {
         /// - 0 -> Never
         /// - 1 -> Every output
         /// - 2 -> Every second output
-        /// ...
+        /// - ...
         /// - 5 -> Every 5th output
         pub fn pmtk_314_api_set_nmea_output(&mut self, output: NmeaOutput) -> Pmtk001Ack {
             //! 19 fields can be parsed to this one.
