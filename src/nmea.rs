@@ -109,17 +109,12 @@ pub mod gga {
     /// - NoFix -> No satellites being received. Default.
     /// - GpsFix -> Just has a fix using satellites.
     /// - DgpsFix -> Differential GPS. Uses readings from ground stations to reduce error.
-    #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+    #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
     pub enum SatFix {
+        #[default]
         NoFix,
         GpsFix,
         DgpsFix,
-    }
-
-    impl Default for SatFix {
-        fn default() -> SatFix {
-            SatFix::NoFix
-        }
     }
 
     /// GGA data struct.
@@ -199,29 +194,24 @@ pub mod gsa {
     use serde::{Serialize, Deserialize};
 
     /// Manual or automatic selection mode for 3d or 2d fix.
-    #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
+    #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Default)]
     pub enum Mode {
+        #[default]
         Manual,
         Automatic,
-    }
-    impl Default for Mode {
-        fn default() -> Mode {Mode::Manual}
     }
 
     /// # Dimension fix
     /// - NotAvailable -> No satellite fix.
     /// - Dimension2d -> fewer than 4 satellites.
     /// - Dimension3d -> more than 4 satellites.
-    #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
+    #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Default)]
     pub enum DimensionFix {
+        #[default]
         NotAvailable,
         Dimension2d,
         Dimension3d,
     }
-    impl Default for DimensionFix {
-        fn default() -> DimensionFix {DimensionFix::NotAvailable}
-    }
-
     /// # GSA data struct
     /// - mode -> [Mode](nmea/gsa/enum.Mode.html)
     /// - dimension_fix -> [DimensionFix](nmea/gsa/enum.DimensionFix.html)
@@ -467,15 +457,13 @@ pub mod vtg {
 
     use serde::{Serialize, Deserialize};
 
-    #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
+    #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Default)]
     pub enum Mode {
         Autonomous,
         Differential,
         Estimated,
+        #[default]
         Unknown,
-    }
-    impl Default for Mode {
-        fn default() -> Mode {Mode::Unknown}
     }
 
     /// # VtgData
