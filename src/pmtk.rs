@@ -170,7 +170,7 @@ pub mod send_pmtk {
             let cmd = add_checksum(cmd.to_string());
             let byte_cmd = cmd.as_bytes();
             self.port.clear(serialport::ClearBuffer::Output);
-            self.port.write(byte_cmd);
+            self.port.write_all(byte_cmd);
         }
 
         /// Check for a PMTK001 return.
