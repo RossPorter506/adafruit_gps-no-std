@@ -706,11 +706,7 @@ pub mod send_pmtk {
             return match self.pmtk_500() {
                 Some(args) => {
                     let args: Vec<&str> = args.split(",").collect();
-                    if args.get(2).unwrap() == &"0" {
-                        false
-                    } else {
-                        true
-                    }
+                    return args.get(2).unwrap() != &"0";
                 }
                 None => true,
             };

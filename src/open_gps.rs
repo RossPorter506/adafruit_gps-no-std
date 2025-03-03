@@ -64,12 +64,8 @@ pub mod gps {
                     // Skip $ sign. bitwise xor for each i in body
                     actual ^= *i;
                 }
-                if actual == expected_checksum {
-                    return true;
-                } else {
-                    return false;
+                return actual == expected_checksum;
                 }
-            }
             Err(_e) => return false,
         }
     }
