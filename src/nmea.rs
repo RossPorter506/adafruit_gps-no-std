@@ -161,10 +161,10 @@ pub mod gga {
         let lat: Option<f32> = _parse_degrees(args.get(2).unwrap(), args.get(3).unwrap());
         let long: Option<f32> = _parse_degrees(args.get(4).unwrap(), args.get(5).unwrap());
 
-        let sat_fix = match args.get(6).unwrap() {
-            &"0" => SatFix::NoFix,
-            &"1" => SatFix::GpsFix,
-            &"2" => SatFix::DgpsFix,
+        let sat_fix = match *args.get(6).unwrap() {
+            "0" => SatFix::NoFix,
+            "1" => SatFix::GpsFix,
+            "2" => SatFix::DgpsFix,
             _ => SatFix::NoFix,
         };
         let satellites_used: i32 = args.get(7).unwrap().parse().unwrap();
@@ -266,15 +266,15 @@ pub mod gsa {
             )
         }
 
-        let mode = match args.get(1).unwrap() {
-            &"M" => Mode::Manual,
-            &"A" => Mode::Automatic,
+        let mode = match *args.get(1).unwrap() {
+            "M" => Mode::Manual,
+            "A" => Mode::Automatic,
             _ => Mode::Manual, // Default.
         };
-        let dimention_fix = match args.get(2).unwrap() {
-            &"1" => DimensionFix::NotAvailable,
-            &"2" => DimensionFix::Dimension2d,
-            &"3" => DimensionFix::Dimension3d,
+        let dimension_fix = match *args.get(2).unwrap() {
+            "1" => DimensionFix::NotAvailable,
+            "2" => DimensionFix::Dimension2d,
+            "3" => DimensionFix::Dimension3d,
             _ => DimensionFix::NotAvailable,
         };
         let sat1: Option<i32> = args.get(3).unwrap().parse::<i32>().ok();
@@ -296,7 +296,7 @@ pub mod gsa {
 
         return GsaData {
             mode,
-            dimension_fix: dimention_fix,
+            dimension_fix,
             sat1,
             sat2,
             sat3,
@@ -422,9 +422,9 @@ pub mod rmc {
         //! magnetic variation (degrees), magnetic variation (E/W), Mode * checksum
 
         let utc = args.get(1).unwrap().parse().unwrap_or(0.0);
-        let fix_status = match args.get(2).unwrap_or(&"V") {
-            &"A" => true,
-            &"V" => false,
+        let fix_status = match *args.get(2).unwrap_or(&"V") {
+            "A" => true,
+            "V" => false,
             _ => false,
         };
         let latitude: Option<f32> = _parse_degrees(args.get(3).unwrap(), args.get(4).unwrap());
@@ -432,9 +432,9 @@ pub mod rmc {
         let speed: Option<f32> = args.get(7).unwrap().parse::<f32>().ok();
         let course: Option<f32> = args.get(8).unwrap().parse::<f32>().ok();
         let date: String = args.get(9).unwrap_or(&"").to_string();
-        let mag_var: Option<f32> = match args.get(12).unwrap_or(&"") {
-            &"E" => args.get(11).unwrap().parse::<f32>().ok(),
-            &"W" => Some(args.get(11).unwrap().parse::<f32>().unwrap() * -1.0),
+        let mag_var: Option<f32> = match *args.get(12).unwrap_or(&"") {
+            "E" => args.get(11).unwrap().parse::<f32>().ok(),
+            "W" => Some(args.get(11).unwrap().parse::<f32>().unwrap() * -1.0),
             _ => None,
         };
         return RmcData {
@@ -491,10 +491,10 @@ pub mod vtg {
         let speed_knots: Option<f32> = args.get(5).unwrap().parse::<f32>().ok();
         let speed_kph: Option<f32> = args.get(7).unwrap().parse::<f32>().ok();
 
-        let mode = match args.get(9).unwrap_or(&"N") {
-            &"A" => Mode::Autonomous,
-            &"D" => Mode::Differential,
-            &"E" => Mode::Estimated,
+        let mode = match *args.get(9).unwrap_or(&"N") {
+            "A" => Mode::Autonomous,
+            "D" => Mode::Differential,
+            "E" => Mode::Estimated,
             _ => Mode::Unknown,
         };
         return VtgData {
@@ -541,9 +541,9 @@ pub mod gll {
         let longitude: Option<f32> = _parse_degrees(args.get(3).unwrap(), args.get(4).unwrap());
         // Parse time
         let utc = args.get(5).unwrap_or(&"0").parse::<f64>().ok();
-        let is_valid = match args.get(6).unwrap_or(&"") {
-            &"A" => true,
-            &"V" => false,
+        let is_valid = match *args.get(6).unwrap_or(&"") {
+            "A" => true,
+            "V" => false,
             _ => false,
         };
         return GllData {
