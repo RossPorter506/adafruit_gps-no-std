@@ -6,7 +6,7 @@
 pub mod gps {
     //! This is the main module around which all other modules interact.
     //! It contains the Gps structure, open port and GpsData that are central to using this module.
-    use core::{str, time::Duration};
+    use core::{convert::TryInto, str, time::Duration};
     #[cfg(feature="std")]
     use std::{fs::{File, OpenOptions}, io::{Read, Write}};
 
@@ -16,10 +16,12 @@ pub mod gps {
     #[cfg(feature="std")]
     use serialport::prelude::*;
 
+    use arrayvec::ArrayVec;
+
     use crate::nmea::gga::{GgaData, parse_gga};
     use crate::nmea::gll::{GllData, parse_gll};
     use crate::nmea::gsa::{GsaData, parse_gsa};
-    use crate::nmea::gsv::{parse_gsv, Satellites};
+    use crate::nmea::gsv::{parse_gsv, Satellite};
     use crate::nmea::parse_nmea::parse_sentence;
     use crate::nmea::rmc::{parse_rmc, RmcData};
     use crate::nmea::vtg::{parse_vtg, VtgData};
@@ -27,7 +29,7 @@ pub mod gps {
     /// Opens the port to the GPS, probably /dev/serial0
     /// Default baud rate is 9600
     #[cfg(feature="std")]
-    pub fn open_port(port_name: &str, baud_rate: u32) -> Box<dyn SerialPort> {
+    pub fn open_port(port_name: &str, baud_rate: u32) -> std::boxed::Box<dyn SerialPort> {
         let settings = SerialPortSettings {
             baud_rate,
             data_bits: DataBits::Eight,
@@ -75,10 +77,12 @@ pub mod gps {
     /// Enum for if the port connection to the gps is valid, gave invalid bytes, or is not connected
     #[derive(PartialEq, Debug)]
     pub enum PortConnection {
-        Valid(String),
-        InvalidBytes(Vec<u8>),
+        Valid(crate::pmtk::send_pmtk::GenericGpsSentence),
+        InvalidBytes(crate::pmtk::send_pmtk::GenericGpsSentenceBytes),
         NoConnection,
     }
+
+    pub(crate) const MAX_SATELLITES: usize = 22; // MK3333/MK3339 max
 
     /// Enum for the gps.update() method.
     #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -86,7 +90,7 @@ pub mod gps {
         GGA(GgaData),
         VTG(VtgData),
         GSA(GsaData),
-        GSV(Vec<Satellites>),
+        GSV(ArrayVec<Satellite, MAX_SATELLITES>),
         GLL(GllData),
         RMC(RmcData),
         NoConnection,
@@ -96,7 +100,7 @@ pub mod gps {
 
     #[cfg(feature="std")]
     pub mod serial {
-        use std::{marker::PhantomData, ops::{Deref, DerefMut}};
+        use std::{marker::PhantomData, ops::{Deref, DerefMut}, boxed::Box};
 
         use super::*;
         pub struct Serial<'a,E> {
@@ -187,8 +191,8 @@ pub mod gps {
             // from the serial buffer is the size of the buffer vec.
 
             // 127 is the maximum valid utf8 number.
-            let mut buffer: Vec<u8> = vec![0; 1]; // Reads what is in the buffer, be it nothing or max.
-            let mut output: Vec<u8> = Vec::new();
+            let mut buffer: [u8; 1] = [0; 1]; // Reads what is in the buffer one byte at a time
+            let mut output: ArrayVec<u8, {crate::pmtk::send_pmtk::GPS_MAX_SENTENCE_LEN}> = ArrayVec::new();
             let p = &mut self.port;
             let mut cont = true;
             let start = std::time::SystemTime::now();
@@ -199,10 +203,11 @@ pub mod gps {
                     return PortConnection::NoConnection;
                 }
                 match p.read(buffer.as_mut_slice()) {
+                    Ok(0) => (),
                     Ok(buffer_size) => {
-                        output.extend_from_slice(&buffer[..buffer_size]);
+                        output.try_extend_from_slice(&buffer[..buffer_size]).unwrap();
 
-                        if output.get(output.len() - 1).unwrap() == &10u8 || output.len() > 255 {
+                        if output.last() == Some(&b'\n') || output.is_full() {
                             cont = false;
                         }
                     }
@@ -211,7 +216,7 @@ pub mod gps {
             }
             let string = str::from_utf8(&output);
             if let Ok(str) = string {
-                PortConnection::Valid(str.to_string())
+                PortConnection::Valid(crate::pmtk::send_pmtk::GenericGpsSentence::from(str).unwrap())
             }
             else {
                 PortConnection::InvalidBytes(output)
@@ -227,33 +232,35 @@ pub mod gps {
                 PortConnection::NoConnection => GpsSentence::NoConnection,
                 PortConnection::InvalidBytes(_vector) => GpsSentence::InvalidBytes,
                 PortConnection::Valid(string) => {
-                    let sentence: Option<Vec<&str>> = parse_sentence(string.as_str());
+                    let sentence: Option<ArrayVec<&str, {crate::nmea::parse_nmea::GPS_SENTENCE_MAX_SECTIONS}>> = parse_sentence(&string);
                     if sentence.is_some() {
                         let sentence = sentence.unwrap();
                         let header = sentence.get(0).unwrap();
                         // At this point sentences needs to be is_valid str.
                         if &header[3..5] == "GG" {
-                            return GpsSentence::GGA(parse_gga(sentence));
+                            return GpsSentence::GGA(parse_gga(sentence.as_slice().try_into().unwrap()));
                         } else if &header[3..6] == "VTG" {
-                            return GpsSentence::VTG(parse_vtg(sentence));
+                            return GpsSentence::VTG(parse_vtg(sentence.as_slice().try_into().unwrap()));
                         } else if &header[3..6] == "GSA" {
-                            return GpsSentence::GSA(parse_gsa(sentence));
+                            return GpsSentence::GSA(parse_gsa(sentence.as_slice().try_into().unwrap()));
                         } else if &header[3..6] == "GLL" {
-                            return GpsSentence::GLL(parse_gll(sentence));
+                            return GpsSentence::GLL(parse_gll(sentence.as_slice().try_into().unwrap()));
                         } else if &header[3..6] == "RMC" {
-                            return GpsSentence::RMC(parse_rmc(sentence));
+                            return GpsSentence::RMC(parse_rmc(sentence.as_slice().try_into().unwrap()));
                         } else if &header[3..6] == "GSV" {
                             // Assumes that each GSV sentence if given in exact sequence, and not out of order.
                             let number_of_messages: i32 = sentence.get(1).unwrap().parse().unwrap();
 
-                            let mut gsv_values: Vec<Satellites> = parse_gsv(sentence); // First sentence
+                            let mut gsv_values: ArrayVec<Satellite, MAX_SATELLITES> = parse_gsv(sentence); // First sentence
                             for _message in 1..number_of_messages { // If number of messages is 1, this is all skipped.
                                 // Read lines and add it for each message.
                                 let line = self.read_line();
                                 if let PortConnection::Valid(line) = line {
                                     let sentence = parse_sentence(line.as_str());
                                     let sentence = sentence.unwrap();
-                                    gsv_values.append(parse_gsv(sentence).as_mut())
+                                    for sat in parse_gsv(sentence) {
+                                        gsv_values.push(sat);
+                                    }
                                 };
                             }
                             return GpsSentence::GSV(gsv_values);
@@ -272,7 +279,8 @@ pub mod gps {
         ///
         /// Benches at 263,860ns to read a 1,000 long vec.
         #[cfg(feature="std")]
-        pub fn read_from(file: &str) -> Vec<GpsSentence> {
+        pub fn read_from(file: &str) -> std::vec::Vec<GpsSentence> {
+            use std::vec::Vec;
             let mut f = File::open(file).expect("No file found");
             let mut buffer = Vec::new();
             let _ = f.read_to_end(&mut buffer);
@@ -374,29 +382,29 @@ mod test_read_write {
         SENTENCE.append_to("single_test");
         let read = GpsSentence::read_from("single_test");
         let _ = remove_file("single_test");
-        assert_eq!(read, vec![SENTENCE]);
+        assert_eq!(read, std::vec![SENTENCE]);
     }
 
     #[test]
     fn read_write_vec() {
-        let v: Vec<GpsSentence> = vec![SENTENCE];
+        let v: std::vec::Vec<GpsSentence> = std::vec![SENTENCE];
         for s in v.iter() {
             s.clone().append_to("vec_test");
         }
-        let read: Vec<GpsSentence> = GpsSentence::read_from("vec_test");
+        let read: std::vec::Vec<GpsSentence> = GpsSentence::read_from("vec_test");
         let _ = remove_file("vec_test");
         assert_eq!(v, read);
     }
 
     #[test]
     fn read_and_write_loop() {
-        let mut check_vec = Vec::new();
+        let mut check_vec = std::vec::Vec::new();
         for _ in 0..3 {
             SENTENCE.append_to("loop_test");
             check_vec.push(SENTENCE)
         }
 
-        let read: Vec<GpsSentence> = GpsSentence::read_from("loop_test");
+        let read: std::vec::Vec<GpsSentence> = GpsSentence::read_from("loop_test");
         let _ = remove_file("loop_test");
         assert_eq!(read, check_vec);
     }

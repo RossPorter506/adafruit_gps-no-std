@@ -34,6 +34,9 @@
 pub mod parse_nmea {
     //! Main module for parsing any NMEA sentence and exporting NMEA parsing to lib.rs
 
+    use core::fmt::Write;
+    use arrayvec::{ArrayString, ArrayVec};
+
     use crate::open_gps;
 
     pub fn _parse_degrees(degrees: &str, compass_direction: &str) -> Option<f32> {
@@ -46,7 +49,7 @@ pub mod parse_nmea {
         }
         let deg: f32;
         let minutes: f32;
-        let first_half: Vec<&str> = degrees.split('.').collect();
+        let first_half: ArrayVec<&str, 2> = degrees.split('.').collect();
 
         if first_half[0].len() == 4 {
             deg = degrees[0..2].parse::<f32>().unwrap();
@@ -57,7 +60,9 @@ pub mod parse_nmea {
         }
 
         let r: f32 = deg + minutes;
-        let r: f32 = format!("{:.6}", r).parse().unwrap(); // Round to 6 decimal places.
+        let mut r_str: ArrayString<10> = ArrayString::new();
+        write!(r_str, "{:.6}", r).unwrap();// Round to 6 decimal places.
+        let r: f32 = r_str.parse().unwrap();
 
         if (compass_direction == "N") | (compass_direction == "E") {
             return Some(r);
@@ -68,18 +73,23 @@ pub mod parse_nmea {
         }
     }
 
-    pub fn _format_hhmmss(time: &str) -> String {
+    pub fn _format_hhmmss(time: &str) -> ArrayString<8> {
         // Take in a string of hhmmss and return it as a formatted hh-mm-ss
+        
         if time.len() < 6 {
-            return "".to_string();
+            return ArrayString::new();
         }
         let hours = &time[0..2];
         let mins = &time[2..4];
         let secs = &time[4..6];
-        return format!("{}:{}:{}", hours, mins, secs);
+        
+        let mut ftime = ArrayString::new();
+        write!(ftime, "{}:{}:{}", hours, mins, secs).unwrap();
+        return ftime;
     }
 
-    pub fn parse_sentence(sentence: &str) -> Option<Vec<&str>> {
+    pub(crate) const GPS_SENTENCE_MAX_SECTIONS: usize = 20; // This is a complete guess. TODO: Verify
+    pub fn parse_sentence(sentence: &str) -> Option<ArrayVec<&str, GPS_SENTENCE_MAX_SECTIONS>> {
         // Assumes that a valid sentence is always given.
         // Convert sentence into a split vec along ','.
 
@@ -103,6 +113,7 @@ pub mod gga {
     //!
 
     use super::parse_nmea::*;
+    use arrayvec::ArrayVec;
     use serde::{Serialize, Deserialize};
 
     /// Satellite fix type
@@ -141,17 +152,14 @@ pub mod gga {
     }
 
     /// Take a parse_sentence vec<&str> and output GgaData.
-    pub fn parse_gga(args: Vec<&str>) -> GgaData {
+    pub fn parse_gga(args: ArrayVec<&str, 14>) -> GgaData {
         //! ${GP,GL,GA,GN}GGA, UTC, lat, N/S, long, E/S, Fix quality, Sats used, HDOP, Alt, Alt Units,
         //! Geoidal separation, Geo units, Age of diff corr, * checksum
         //!
         //! Time, sat fix and sats used always given.
         let header = args.get(0).unwrap();
         if &header[3..5] != "GG" {
-            panic!(
-                "Sentence is not a GGA format, it's {} format",
-                header
-            )
+            panic!("Sentence is not a GGA format, it's {} format", header)
         }
 
         // Parse time
@@ -191,6 +199,7 @@ pub mod gsa {
     //!
     //! Gives All the satellites that are being tracked and the HDOP, VDOP, PDOP.
 
+    use arrayvec::ArrayVec;
     use serde::{Serialize, Deserialize};
 
     /// Manual or automatic selection mode for 3d or 2d fix.
@@ -242,7 +251,7 @@ pub mod gsa {
         pub vdop: Option<f32>,
     }
 
-    pub fn parse_gsa(args: Vec<&str>) -> GsaData {
+    pub fn parse_gsa(args: ArrayVec<&str,18>) -> GsaData {
         //! Format
         //! $G{}GSA, Mode, dimention_fix, Sat1, Sat2, Sat3, Sat4, Sat5, Sat6, Sat7, Sat8, Sat9, Sat10,
         //! Sat11, Sat12, PDOP, HDOP, VDOP  *checksum
@@ -277,22 +286,22 @@ pub mod gsa {
             "3" => DimensionFix::Dimension3d,
             _ => DimensionFix::NotAvailable,
         };
-        let sat1: Option<i32> = args.get(3).unwrap().parse::<i32>().ok();
-        let sat2: Option<i32> = args.get(4).unwrap().parse::<i32>().ok();
-        let sat3: Option<i32> = args.get(5).unwrap().parse::<i32>().ok();
-        let sat4: Option<i32> = args.get(6).unwrap().parse::<i32>().ok();
-        let sat5: Option<i32> = args.get(7).unwrap().parse::<i32>().ok();
-        let sat6: Option<i32> = args.get(8).unwrap().parse::<i32>().ok();
-        let sat7: Option<i32> = args.get(9).unwrap().parse::<i32>().ok();
-        let sat8: Option<i32> = args.get(10).unwrap().parse::<i32>().ok();
-        let sat9: Option<i32> = args.get(11).unwrap().parse::<i32>().ok();
+        let sat1: Option<i32>  = args.get(3).unwrap().parse::<i32>().ok();
+        let sat2: Option<i32>  = args.get(4).unwrap().parse::<i32>().ok();
+        let sat3: Option<i32>  = args.get(5).unwrap().parse::<i32>().ok();
+        let sat4: Option<i32>  = args.get(6).unwrap().parse::<i32>().ok();
+        let sat5: Option<i32>  = args.get(7).unwrap().parse::<i32>().ok();
+        let sat6: Option<i32>  = args.get(8).unwrap().parse::<i32>().ok();
+        let sat7: Option<i32>  = args.get(9).unwrap().parse::<i32>().ok();
+        let sat8: Option<i32>  = args.get(10).unwrap().parse::<i32>().ok();
+        let sat9: Option<i32>  = args.get(11).unwrap().parse::<i32>().ok();
         let sat10: Option<i32> = args.get(12).unwrap().parse::<i32>().ok();
         let sat11: Option<i32> = args.get(13).unwrap().parse::<i32>().ok();
         let sat12: Option<i32> = args.get(14).unwrap().parse::<i32>().ok();
 
-        let pdop: Option<f32> = args.get(15).unwrap().parse::<f32>().ok();
-        let hdop: Option<f32> = args.get(16).unwrap().parse::<f32>().ok();
-        let vdop: Option<f32> = args.get(17).unwrap().parse::<f32>().ok();
+        let pdop: Option<f32>  = args.get(15).unwrap().parse::<f32>().ok();
+        let hdop: Option<f32>  = args.get(16).unwrap().parse::<f32>().ok();
+        let vdop: Option<f32>  = args.get(17).unwrap().parse::<f32>().ok();
 
         return GsaData {
             mode,
@@ -323,6 +332,7 @@ pub mod gsv {
     //! multiple sentences.
     //!
 
+    use arrayvec::ArrayVec;
     use serde::{Serialize, Deserialize};
 
     /// The struct for a single satellite. To be accessed as a vector.
@@ -331,14 +341,14 @@ pub mod gsv {
     /// - azimuth -> The degrees from north the satellite is, if it was on the ground.
     /// - snr -> Signal to Noise ratio: Signal / Noise , 0-99, null if not tracking.
     #[derive(PartialEq, Debug, Default, Serialize, Deserialize, Clone)]
-    pub struct Satellites {
+    pub struct Satellite {
         pub id: Option<i32>,
         pub elevation: Option<f32>,
         pub azimuth: Option<f32>,
         pub snr: Option<f32>,
     }
 
-    pub fn parse_gsv(args: Vec<&str>) -> Vec<Satellites> {
+    pub fn parse_gsv(args: ArrayVec<&str, 20>) -> ArrayVec<Satellite, {crate::open_gps::gps::MAX_SATELLITES}> {
         //! Format $GPGSV, Number of messages, Message number, Sats in view,
         //!      sat ID, Sat elevation, Sat Azimuth, Sat SNE, Repeat 4 times, *checksum
         //!
@@ -361,7 +371,7 @@ pub mod gsv {
                 header
             )
         }
-        let mut values = Vec::new();
+        let mut values = ArrayVec::new();
         let _meta = &args.get(0..4);
         let sat1 = &args.get(4..8);
         let sat2 = &args.get(8..12);
@@ -375,8 +385,8 @@ pub mod gsv {
         values
     }
 
-    fn parse_sat(args: &[&str]) -> Satellites {
-        Satellites {
+    fn parse_sat(args: &[&str]) -> Satellite {
+        Satellite {
             id: args.get(0).unwrap().parse().ok(),
             elevation: args.get(1).unwrap().parse().ok(),
             azimuth: args.get(2).unwrap().parse().ok(),
@@ -390,6 +400,7 @@ pub mod rmc {
     //!
     //! Gives UTC, latitude, longitude, Speed, True course, Magnetic course, Date, Magnatic variation
     use super::parse_nmea::*;
+    use arrayvec::{ArrayString, ArrayVec};
     use serde::{Serialize, Deserialize};
 
     /// # RmcData
@@ -409,11 +420,11 @@ pub mod rmc {
         pub longitude: Option<f32>,
         pub speed: Option<f32>,
         pub course: Option<f32>,
-        pub date: String,
+        pub date: ArrayString<6>,
         pub mag_var: Option<f32>,
     }
 
-    pub fn parse_rmc(args: Vec<&str>) -> RmcData {
+    pub fn parse_rmc(args: ArrayVec<&str, 12>) -> RmcData {
         //! Magnetic variation, positive is east, negative is west.
         //! Data string format:
         //!   0     1         2       3           4       5       6           7       8           9
@@ -431,7 +442,7 @@ pub mod rmc {
         let longitude: Option<f32> = _parse_degrees(args.get(5).unwrap(), args.get(6).unwrap());
         let speed: Option<f32> = args.get(7).unwrap().parse::<f32>().ok();
         let course: Option<f32> = args.get(8).unwrap().parse::<f32>().ok();
-        let date: String = args.get(9).unwrap_or(&"").to_string();
+        let date: ArrayString<6> = ArrayString::from(args.get(9).unwrap_or(&"")).unwrap();
         let mag_var: Option<f32> = match *args.get(12).unwrap_or(&"") {
             "E" => args.get(11).unwrap().parse::<f32>().ok(),
             "W" => Some(args.get(11).unwrap().parse::<f32>().unwrap() * -1.0),
@@ -455,6 +466,7 @@ pub mod vtg {
     //!
     //! Gives course headings and speed data.
 
+    use arrayvec::ArrayVec;
     use serde::{Serialize, Deserialize};
 
     #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Default)]
@@ -481,7 +493,7 @@ pub mod vtg {
         pub mode: Mode,
     }
 
-    pub fn parse_vtg(args: Vec<&str>) -> VtgData {
+    pub fn parse_vtg(args: ArrayVec<&str, 10>) -> VtgData {
         //! Sentence format
         //!
         //! $GPVTG,  course, reference (True), course, reference (magnetic), Speed, knots,
@@ -510,6 +522,7 @@ pub mod vtg {
 pub mod gll {
     //! # Longitude and Latitude data only
     use super::parse_nmea::*;
+    use arrayvec::ArrayVec;
     use serde::{Serialize, Deserialize};
 
     /// # GllData
@@ -525,8 +538,9 @@ pub mod gll {
         pub is_valid: bool,
     }
 
-    pub fn parse_gll(args: Vec<&str>) -> GllData {
+    pub fn parse_gll(args: ArrayVec<&str, 8>) -> GllData {
         // Format for the gpgll data string:
+        // [0] $GPGLL
         // [1] Latitude(as hhmm.mmm),
         // [2] Latitude North or South,
         // [3] Longitude(as hhmm.mmm),
@@ -571,6 +585,8 @@ mod nmea_tests {
     }
 
     mod gga {
+        use arrayvec::ArrayVec;
+
         use crate::nmea::gga;
 
         #[test]
@@ -578,7 +594,7 @@ mod nmea_tests {
             //${GP,GL,GA,GN}GGA, UTC, lat, N/S, long, E/S, Fix quality, Sats used, HDOP, Alt, Alt Units,
             // Geoidal separation, Geo units, Age of diff corr, * checksum
             assert_eq!(
-                gga::parse_gga(vec![
+                gga::parse_gga(arrayvec::ArrayVec::from([
                     "$GPGGA",
                     "19294.00",
                     "29343.543",
@@ -593,7 +609,7 @@ mod nmea_tests {
                     "10.0",
                     "M",
                     "0.1"
-                ]),
+                ])),
                 gga::GgaData {
                     utc: 19294.00,
                     lat: Some(34.725716),
@@ -611,7 +627,7 @@ mod nmea_tests {
         #[test]
         #[should_panic]
         fn gga_incorrect_header() {
-            gga::parse_gga(vec![
+            gga::parse_gga(arrayvec::ArrayVec::from([
                 "$GPGSV",
                 "19294.00",
                 "29343.543",
@@ -626,7 +642,7 @@ mod nmea_tests {
                 "10.0",
                 "M",
                 "0.1",
-            ]);
+            ]));
         }
     }
     mod gsa {
@@ -635,10 +651,10 @@ mod nmea_tests {
         #[test]
         fn gsa_normal() {
             assert_eq!(
-                gsa::parse_gsa(vec![
+                gsa::parse_gsa(arrayvec::ArrayVec::from([
                     "$GPGSA", "M", "2", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
                     "11", "12", "1.0", "2.04", "32.04"
-                ]),
+                ])),
                 gsa::GsaData {
                     mode: gsa::Mode::Manual,
                     dimension_fix: gsa::DimensionFix::Dimension2d,
@@ -663,10 +679,10 @@ mod nmea_tests {
         #[test]
         #[should_panic]
         fn gsa_incorrect_header() {
-            gsa::parse_gsa(vec![
+            gsa::parse_gsa(arrayvec::ArrayVec::from([
                 "$GPGGA", "M", "2", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
                 "11", "12", "1.0", "2.04", "32.04",
-            ]);
+            ]));
         }
     }
     mod gsv {}

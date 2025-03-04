@@ -21,14 +21,15 @@
 
 pub mod send_pmtk {
     //! Contains all the pmtk commands that can be sent.
-    use core::str;
+    use core::{str, fmt::Write};
 
+    use arrayvec::{ArrayString, ArrayVec};
     #[cfg(feature="std")]
     use serialport::{self, ClearBuffer};
 
     use super::super::open_gps::gps::{Gps, is_valid_checksum, PortConnection};
     #[cfg(feature="std")]
-    use super::super::open_gps::gps::{open_port, GpsSentence};
+    use super::super::open_gps::gps::GpsSentence;
 
     #[derive(Debug, PartialEq)]
     /// # PMTK001 return values
@@ -103,17 +104,28 @@ pub mod send_pmtk {
         pub lcwn_lctow_tow: i8,
     }
 
+    const NMEA_MAX_SENTENCE_LEN: usize = 83; // from http://fort21.ru/download/NMEAdescription.pdf
+    pub(crate) type NmeaSentenceString = ArrayString<NMEA_MAX_SENTENCE_LEN>;
+
+    const PMTK_MAX_SENTENCE_LEN: usize = 255; // from https://cdn.sparkfun.com/assets/parts/1/2/2/8/0/PMTK_Packet_User_Manual.pdf
+    pub(crate) type PmtkSentenceString = ArrayString<PMTK_MAX_SENTENCE_LEN>;
+
+    pub(crate) const GPS_MAX_SENTENCE_LEN: usize = PMTK_MAX_SENTENCE_LEN;
+    pub(crate) type GenericGpsSentence = ArrayString<GPS_MAX_SENTENCE_LEN>;
+    pub(crate) type GenericGpsSentenceBytes = ArrayVec<u8, GPS_MAX_SENTENCE_LEN>;
+    
     /// Adds a $ and a checksum to a given string.
-    pub fn add_checksum(sentence: String) -> String {
+    pub fn add_checksum(mut sentence: NmeaSentenceString) -> NmeaSentenceString {
         let mut checksum = 0;
         for char in sentence.as_bytes() {
             checksum ^= *char;
         }
-        let checksum = format!("{:X}", checksum); //Format as hexidecimal.
-        let checksumed_sentence = format!("${}*{}\r\n", sentence, checksum)
-            .as_str()
-            .to_ascii_uppercase();
-        return checksumed_sentence;
+        use core::fmt::Write;
+        let mut checksum_ascii = ArrayString::<2>::new();
+        write!(checksum_ascii, "{:X}", checksum).unwrap(); //Format as hexidecimal.
+        write!(sentence, "${}*{}\r\n", sentence.clone(), checksum).unwrap();
+        sentence.make_ascii_uppercase();
+        return sentence;
     }
 
     /// Success (new baud rate) or fail.
@@ -132,7 +144,7 @@ pub mod send_pmtk {
     ///
     /// Use a battery to maintain settings as this method takes a while to run and is error prone.
     #[cfg(feature="std")]
-    pub fn set_baud_rate(baud_rate: &str, port_name: &str) -> BaudRateResults {
+    pub fn set_baud_rate(port_name: &str, baud_rate: u32) -> BaudRateResults {
         // stty -F /dev/serial0 9600 clocal cread cs8 -cstopb -parenb
 
         // Get current baud rate
@@ -152,7 +164,10 @@ pub mod send_pmtk {
                     GpsSentence::InvalidBytes => {}
                     _ => {
                         gps.pmtk_220_set_nmea_updaterate("1000");
-                        let cmd = add_checksum(format!("PMTK251,{}", baud_rate));
+                        use core::fmt::Write;
+                        let mut cmd = NmeaSentenceString::new();
+                        write!(cmd, "PMTK251,{}", baud_rate).unwrap();
+                        let cmd = add_checksum(cmd);
                         let cmd = cmd.as_bytes();
                         let _ = gps.port.clear(ClearBuffer::Output);
                         let _ = gps.port.write(cmd);
@@ -170,7 +185,7 @@ pub mod send_pmtk {
         /// Send the PMTK command.
         pub fn send_command(&mut self, cmd: &str) {
             //! Input: no $ and no *checksum.
-            let cmd = add_checksum(cmd.to_string());
+            let cmd = add_checksum(NmeaSentenceString::from(cmd).unwrap());
             let byte_cmd = cmd.as_bytes();
             #[cfg(feature="std")]
             self.port.clear(serialport::ClearBuffer::Output); // Embedded Serial has no buffer
@@ -189,14 +204,10 @@ pub mod send_pmtk {
                             if &line[0..8] == "$PMTK001" {
                                 let line = line.trim();
                                 // Remove checksum.
-                                let line: Vec<&str> = line.split("*").collect();
-                                let line: &str = line.get(0).unwrap();
+                                let line: &str = line.split("*").nth(0).unwrap();
 
-                                let args: Vec<&str> = line.split(",").collect();
-                                // args: $PMTK001, cmd, flag,
-                                // let cmd: &str = args.get(1).expect("pmtk001 format not correct");
-                                let flag: &str = args.get(2).expect("pmtk001 format not correct");
-                                // let value: &str = args.get(3).unwrap_or(&"");
+                                let flag: &str = line.split(",").nth(2).expect("pmtk001 format not correct");
+                                // args: $PMTK001, cmd, flag
 
                                 return if flag == "0" {
                                     Pmtk001Ack::Invalid
@@ -226,7 +237,7 @@ pub mod send_pmtk {
         }
 
         /// Check for PMTK500 style return.
-        pub fn pmtk_500(&mut self) -> Option<String> {
+        pub fn pmtk_500(&mut self) -> Option<PmtkSentenceString> {
             //! Return the string without checksum.
             for _i in 0..10 {
                 // Check 10 lines before giving up.
@@ -236,9 +247,8 @@ pub mod send_pmtk {
                         if (&line[0..5] == "$PMTK") && (is_valid_checksum(&line)) {
                             let line = line.trim();
                             // Remove checksum.
-                            let line: Vec<&str> = line.split("*").collect();
-                            let line: &str = line.get(0).unwrap();
-                            return Some(line.to_string());
+                            let line: &str = line.split("*").nth(0).unwrap();
+                            return Some(PmtkSentenceString::from(line).unwrap());
                         }
                     }
                     PortConnection::NoConnection => {
@@ -299,7 +309,10 @@ pub mod send_pmtk {
 
         /// Set the update rate, as miliseconds from 100 (100Hz) to 10_000 (0.1Hz). 1000 is default.
         pub fn pmtk_220_set_nmea_updaterate(&mut self, update_rate: &str) -> Pmtk001Ack {
-            self.send_command(format!("PMTK220,{}", update_rate).as_str());
+            const LEN: usize = "PMTK220,10000".len();
+            let mut cmd = ArrayString::<LEN>::new();
+            write!(cmd, "PMTK220,{}", update_rate).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -326,8 +339,8 @@ pub mod send_pmtk {
                         // $PM TK5 01, {0,1,2}
                         return DgpsMode::Unknown;
                     }
-                    let mode: String = args.chars().nth_back(0).unwrap().to_string();
-                    let mode: &str = mode.as_str();
+                    let mut mode_bytes = [0u8; 4];
+                    let mode: &str = args.chars().nth_back(0).unwrap().encode_utf8(&mut mode_bytes);
                     if mode == "0" {
                         return DgpsMode::NoDgps;
                     } else if mode == "1" {
@@ -363,8 +376,8 @@ pub mod send_pmtk {
                     if args.len() != 10 {
                         return Sbas::Unknown;
                     }
-                    let mode = args.chars().nth_back(0).unwrap().to_string();
-                    let mode = mode.as_str();
+                    let mut mode_bytes = [0u8; 4]; // char -> &str may require up to 4 bytes
+                    let mode: &str = args.chars().nth_back(0).unwrap().encode_utf8(&mut mode_bytes);
                     if mode == "0" {
                         Sbas::Disabled
                     } else if mode == "1" {
@@ -395,13 +408,11 @@ pub mod send_pmtk {
             //!
             //! Default is PMTK314,-1* (Default: 0,1,1,1,1,5,0..0)
 
-            self.send_command(
-                format!(
-                    "PMTK314,{},{},{},{},{},{},0,0,0,0,0,0,0,{}",
-                    output.gll, output.rmc, output.vtg, output.gga, output.gsa, output.gsv, output.pmtkchn_interval
-                )
-                    .as_str(),
-            );
+            const MAX_LEN: usize = "PMTK314,-127,-127,-127,-127,-127,-127,0,0,0,0,0,0,0,-127".len();
+            let mut cmd = ArrayString::<MAX_LEN>::new();
+            write!(cmd, "PMTK314,{},{},{},{},{},{},0,0,0,0,0,0,0,{}", 
+                output.gll, output.rmc, output.vtg, output.gga, output.gsa, output.gsv, output.pmtkchn_interval).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -412,7 +423,7 @@ pub mod send_pmtk {
             self.send_command("PMTK414");
             return match self.pmtk_500() {
                 Some(args) => {
-                    let args: Vec<&str> = args.split(",").collect();
+                    let args: ArrayVec<&str, 15> = args.split(",").collect();
                     let gll: &str = args.get(1).unwrap_or(&"-1");
                     let rmc: &str = args.get(2).unwrap_or(&"-1");
                     let vtg: &str = args.get(3).unwrap_or(&"-1");
@@ -466,8 +477,8 @@ pub mod send_pmtk {
             self.send_command("PMTK419");
             return match self.pmtk_500() {
                 Some(args) => {
-                    let arg = args.chars().nth_back(0).unwrap().to_string();
-                    let arg = arg.as_str();
+                    let mut arg_bytes = [0u8; 4];
+                    let arg: &str = args.chars().nth_back(0).unwrap().encode_utf8(&mut arg_bytes);
                     if arg == "0" {
                         SbasMode::Testing
                     } else if arg == "1" {
@@ -481,14 +492,14 @@ pub mod send_pmtk {
         }
 
         /// Gives GPS firmware release info.
-        pub fn pmtk_605_q_release(&mut self) -> String {
+        pub fn pmtk_605_q_release(&mut self) -> PmtkSentenceString {
             //! Return example: $PMTK705,AXN_5.1.7_3333_19020118,0027,PA1010D,1.0*76
             //!
             //! Return blank string if no info found.
             self.send_command("PMTK605");
             return match self.pmtk_500() {
-                Some(args) => args[9..args.len()].to_string(),
-                None => "".to_string(),
+                Some(args) => PmtkSentenceString::from(&args[9..]).unwrap(),
+                None => PmtkSentenceString::new(),
             };
         }
 
@@ -511,18 +522,18 @@ pub mod send_pmtk {
 
             let args = self
                 .pmtk_500()
-                .unwrap_or("PMTK,-1,-1,-1,-1,-1,-1,-1,-1,-1".to_string());
-            let args: Vec<&str> = args.split(",").collect();
+                .unwrap_or(PmtkSentenceString::from("PMTK,-1,-1,-1,-1,-1,-1,-1,-1,-1").unwrap());
+            let args: ArrayVec<&str, 10> = args.split(",").collect();
             return EpoData {
-                set: args.get(1).unwrap_or(&"-1").parse::<i8>().unwrap(),
-                fwn_ftow_week_number: args.get(2).unwrap_or(&"-1").parse::<i8>().unwrap(),
-                fwn_ftow_tow: args.get(3).unwrap_or(&"-1").parse::<i8>().unwrap(),
-                lwn_ltow_week_number: args.get(4).unwrap_or(&"-1").parse::<i8>().unwrap(),
-                lwn_ltow_tow: args.get(5).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                set:                    args.get(1).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                fwn_ftow_week_number:   args.get(2).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                fwn_ftow_tow:           args.get(3).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                lwn_ltow_week_number:   args.get(4).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                lwn_ltow_tow:           args.get(5).unwrap_or(&"-1").parse::<i8>().unwrap(),
                 fcwn_fctow_week_number: args.get(6).unwrap_or(&"-1").parse::<i8>().unwrap(),
-                fcwn_fctow_tow: args.get(7).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                fcwn_fctow_tow:         args.get(7).unwrap_or(&"-1").parse::<i8>().unwrap(),
                 lcwn_lctow_week_number: args.get(8).unwrap_or(&"-1").parse::<i8>().unwrap(),
-                lcwn_lctow_tow: args.get(9).unwrap_or(&"-1").parse::<i8>().unwrap(),
+                lcwn_lctow_tow:         args.get(9).unwrap_or(&"-1").parse::<i8>().unwrap(),
             };
         }
 
@@ -540,7 +551,9 @@ pub mod send_pmtk {
         /// Speed thresholds: 0/ 0.2/ 0.4/ 0.6/ 0.8/ 1.0/1.5/2.0 (m/s)
         pub fn pmtk_397_set_nav_speed_threshold(&mut self, nav_threshold: f32) -> Pmtk001Ack {
             //! For MT3318 and MT3329 chips.
-            self.send_command(format!("PMTK397,{:.1}", nav_threshold).as_str());
+            let mut cmd = PmtkSentenceString::new();
+            write!(cmd, "PMTK397,{:.1}", nav_threshold).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -551,7 +564,9 @@ pub mod send_pmtk {
         /// Speed thresholds: 0/ 0.2/ 0.4/ 0.6/ 0.8/ 1.0/1.5/2.0 (m/s)
         pub fn pmtk_386_set_nav_speed_threshold(&mut self, nav_threshold: f32) -> Pmtk001Ack {
             //! For MT3339 chips.
-            self.send_command(format!("PMTK397,{:.1}", nav_threshold).as_str());
+            let mut cmd = PmtkSentenceString::new();
+            write!(cmd, "PMTK397,{:.1}", nav_threshold).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -561,7 +576,7 @@ pub mod send_pmtk {
             self.send_command("PMTK447");
             return match self.pmtk_500() {
                 Some(args) => {
-                    let args: Vec<&str> = args.split(",").collect();
+                    let args: ArrayVec<&str, 2> = args.split(",").collect();
                     let nav_threshold: f32 = args.get(1).unwrap().parse::<f32>().unwrap();
                     nav_threshold
                 }
@@ -597,9 +612,10 @@ pub mod send_pmtk {
             //! Extention gap: Default 60000, range 0-3_600_000
             //!
             //! Standard 001 response.
-            self.send_command(
-                format!("PMTK223,{},{},{},{}", sv, snr, ext_threshold, ext_gap).as_str(),
-            );
+            const MAX_LEN: usize = "PMTK223,4,30,180000,3600000".len();
+            let mut cmd = ArrayString::<MAX_LEN>::new();
+            write!(cmd, "PMTK223,{},{},{},{}", sv, snr, ext_threshold, ext_gap).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -654,13 +670,10 @@ pub mod send_pmtk {
             //!     to achieve balance of positioning accuracy and power consumption.
             //! - 4.This command needs to work normal with some hardware circuits.
             //!
-            self.send_command(
-                format!(
-                    "PMTK223,{},{},{},{},{}",
-                    run_type, run_time, sleep_time, second_run_time, second_sleep_time
-                )
-                    .as_str(),
-            );
+            const MAX_LEN: usize = "PMTK223,9,518400000,518400000,518400000,518400000".len();
+            let mut cmd = ArrayString::<MAX_LEN>::new();
+            write!(cmd, "PMTK223,{},{},{},{},{}", run_type, run_time, sleep_time, second_run_time, second_sleep_time).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -706,10 +719,11 @@ pub mod send_pmtk {
         /// Get current EASY status
         pub fn pmtk_869_cmd_easy_query(&mut self) -> bool {
             //! Query the EASY command status. Return true or false, true is enabled, false it disabled.
+            // $PMTK869,2,0,0
             self.send_command("PMTK869,0");
             return match self.pmtk_500() {
                 Some(args) => {
-                    let args: Vec<&str> = args.split(",").collect();
+                    let args: ArrayVec<&str,4> = args.split(",").collect();
                     return args.get(2).unwrap() != &"0";
                 }
                 None => true,
@@ -720,7 +734,10 @@ pub mod send_pmtk {
         pub fn pmtk_187_locus_config(&mut self, locus_interval: i8) -> Pmtk001Ack {
             //! Locus mode (1 for interval mode) is always on.
             //! Interval, in seconds, is how often to log a data.
-            self.send_command(format!("PMTK187,1,{}", locus_interval).as_str());
+            const MAX_LEN: usize = "PMTK187,1,-127".len();
+            let mut cmd = ArrayString::<MAX_LEN>::new();
+            write!(cmd, "PMTK187,1,{}", locus_interval).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -735,7 +752,10 @@ pub mod send_pmtk {
             //! ‘2’ = TOKYO-A
             //!
             //! A full list is on the GTOP Datum list, but I can't find it.
-            self.send_command(format!("PMTK330,{}", datum).as_str());
+            const MAX_LEN: usize = "PMTK330,65535".len();
+            let mut cmd = ArrayString::<MAX_LEN>::new();
+            write!(cmd, "PMTK330,{}", datum).unwrap();
+            self.send_command(&cmd);
             self.pmtk_001(10)
         }
 
@@ -748,7 +768,7 @@ pub mod send_pmtk {
             self.send_command("PMTK430");
             return match self.pmtk_500() {
                 Some(args) => {
-                    let args: Vec<&str> = args.split(",").collect();
+                    let args: ArrayVec<&str, 2> = args.split(",").collect();
                     let datum = args.get(1).unwrap_or(&"0").parse::<u16>().unwrap();
                     datum
                 }
@@ -792,22 +812,23 @@ pub mod send_pmtk {
 #[cfg(test)]
 mod checksum_test {
     use crate::pmtk::send_pmtk::add_checksum;
+    use crate::pmtk::send_pmtk::NmeaSentenceString;
 
     #[test]
     fn checksum() {
         assert_eq!(
             add_checksum(
-                "GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,".to_string()
+                NmeaSentenceString::from("GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,").unwrap()
             ),
-            "$GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,*6A\r\n"
-                .to_string()
+            NmeaSentenceString::from("$GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,*6A\r\n").unwrap()
         );
-        assert_eq!(add_checksum("PMTK103".to_string()), "$PMTK103*30\r\n")
+        assert_eq!(add_checksum(NmeaSentenceString::from("PMTK103").unwrap()), NmeaSentenceString::from("$PMTK103*30\r\n").unwrap())
     }
 }
 
 #[cfg(test)]
 mod pmtktests {
+    use core::convert::Infallible;
     use std::thread::sleep;
     use std::time::Duration;
 
@@ -816,11 +837,10 @@ mod pmtktests {
     use super::send_pmtk::{DgpsMode, EpoData, NmeaOutput, Pmtk001Ack, Sbas, SbasMode};
     use super::super::open_gps::gps::{Gps, open_port};
 
-    fn port_setup() -> Gps {
-        let _ = set_baud_rate("9600", "/dev/serial0");
+    fn port_setup<'a>() -> Gps<'a, Infallible> {
+        let _ = set_baud_rate("/dev/serial0", 9600);
         sleep(Duration::from_secs(1));
-        let port = open_port("/dev/serial0", 9600);
-        let mut gps = Gps { port };
+        let mut gps = Gps::new_from_device("/dev/serial0", 9600);
         gps.pmtk_220_set_nmea_updaterate("1000");
         return gps;
     }
@@ -932,7 +952,7 @@ mod pmtktests {
     fn test_pmtk_605_q_release() {
         assert_eq!(
             port_setup().pmtk_605_q_release(),
-            "AXN_5.1.7_3333_19020118,0027,PA1010D,1.0".to_string()
+            crate::pmtk::send_pmtk::PmtkSentenceString::from("AXN_5.1.7_3333_19020118,0027,PA1010D,1.0").unwrap()
         );
     }
 
