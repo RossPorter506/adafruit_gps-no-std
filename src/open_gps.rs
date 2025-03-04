@@ -156,6 +156,35 @@ pub mod gps {
         }
         
     }
+
+    // An implementation of embedded_hal::timer::CountDown that uses std::time::SystemTime.
+    #[cfg(feature="std")]
+    pub mod timer {
+        use core::time::Duration;
+
+        #[derive(Default)]
+        pub struct Timer {
+            start: Option<std::time::SystemTime>,
+            count: Option<Duration>
+        }
+        impl embedded_hal::timer::CountDown for Timer {
+            type Time = Duration;
+        
+            fn start<T>(&mut self, count: T)
+            where T: Into<Self::Time> {
+                self.start.replace(std::time::SystemTime::now());
+                self.count.replace(count.into());
+            }
+        
+            fn wait(&mut self) -> nb::Result<(), void::Void> {
+                if self.start.unwrap().elapsed().unwrap() > self.count.unwrap() {
+                    Ok(())
+                }
+                else { Err(nb::Error::WouldBlock) }
+            }
+        }
+    }
+
     use serial::Serial;
     #[cfg(not(feature="std"))]
     use serial::EmbeddedSerial;
@@ -165,20 +194,21 @@ pub mod gps {
     ///
     /// Satellite data: true if you want the individual satellite data
     /// Navigation data: true if you want the navigation data (lat, long, etc)
-    pub struct Gps<'a, E: embedded_io::Error> {
+    pub struct Gps<'a, E: embedded_io::Error, T: embedded_hal::timer::CountDown> {
         pub port: Serial<'a, E>,
+        pub timer: T,
     }
 
     #[cfg(feature="std")]
-    impl Gps<'_, core::convert::Infallible> {
-        pub fn new_from_device(port: &str, baud_rate: u32) -> Gps<'_, std::convert::Infallible> {
-            Gps { port: Serial::new(port, baud_rate) }
+    impl Gps<'_, core::convert::Infallible, timer::Timer> {
+        pub fn new_from_device(port: &str, baud_rate: u32) -> Gps<'_, std::convert::Infallible, timer::Timer> {
+            Gps { port: Serial::new(port, baud_rate), timer: timer::Timer::default() }
         }
     }
-    impl<'a, E: embedded_io::Error> Gps<'a, E> {
+    impl<'a, E: embedded_io::Error, T: embedded_hal::timer::CountDown<Time=Duration>> Gps<'a, E, T> {
         #[cfg(not(feature="std"))]
-        pub fn new_from_peripheral<'serial:'a> (port: &'serial mut dyn EmbeddedSerial<Error=E>) -> Self {
-            Gps { port: Serial{port} }
+        pub fn new_from_peripheral<'serial:'a> (port: &'serial mut dyn EmbeddedSerial<Error=E>, timer: T) -> Self {
+            Gps { port: Serial{port}, timer }
         }
 
         /// Reads a full sentence from the serial buffer, returns a String.
@@ -195,11 +225,11 @@ pub mod gps {
             let mut output: ArrayVec<u8, {crate::pmtk::send_pmtk::GPS_MAX_SENTENCE_LEN}> = ArrayVec::new();
             let p = &mut self.port;
             let mut cont = true;
-            let start = std::time::SystemTime::now();
+            self.timer.start(Duration::from_secs(1));
             while cont {
                 // If there is no connection, this match statement is looped over with a 1 second time out
                 // as given by the port open.
-                if start.elapsed().unwrap() > Duration::from_secs(1) {
+                if self.timer.wait().is_ok() {
                     return PortConnection::NoConnection;
                 }
                 match p.read(buffer.as_mut_slice()) {

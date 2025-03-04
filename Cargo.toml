@@ -34,3 +34,6 @@ embedded-io = "0.6"
 serde = {version = "1.0.110", features = ["derive"]}
 bincode = "1.2.1"
 arrayvec = {version = "0.7", features = ["serde"]}
+embedded-hal = "0.2.7"
+nb = "1.1"
+void = "1.0"

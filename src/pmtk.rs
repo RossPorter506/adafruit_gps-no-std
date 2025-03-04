@@ -21,7 +21,7 @@
 
 pub mod send_pmtk {
     //! Contains all the pmtk commands that can be sent.
-    use core::{str, fmt::Write};
+    use core::{fmt::Write, str, time::Duration};
 
     use arrayvec::{ArrayString, ArrayVec};
     #[cfg(feature="std")]
@@ -129,6 +129,7 @@ pub mod send_pmtk {
     }
 
     /// Success (new baud rate) or fail.
+    #[cfg(feature="std")]
     #[derive(Debug, PartialEq)]
     pub enum BaudRateResults {
         Success(u32),
@@ -180,7 +181,7 @@ pub mod send_pmtk {
     }
 
     /// This implies all the traits to do with sending commands to the gps.
-    impl<'a, E: embedded_io::Error> Gps<'a, E> {
+    impl<'a, E: embedded_io::Error, T: embedded_hal::timer::CountDown<Time=Duration>> Gps<'a, E, T> {
         #[allow(unused_must_use)] // self.port.write is not used
         /// Send the PMTK command.
         pub fn send_command(&mut self, cmd: &str) {
