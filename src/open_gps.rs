@@ -98,6 +98,7 @@ pub mod gps {
         InvalidSentence,
     }
 
+    /// The serial interface used to communicate with a GPS module.
     #[cfg(feature="std")]
     pub mod serial {
         use std::{marker::PhantomData, ops::{Deref, DerefMut}, boxed::Box};
@@ -328,9 +329,9 @@ pub mod gps {
         /// Append a GpsSentence struct to a file.
         /// If you wish to write a vector of bytes, run it over an iterator and add each struct
         /// individually. You must clone the struct that is being iterated over.
-        /// ```
+        /// ```no_run
         /// use adafruit_gps::GpsSentence;
-        /// let v: Vec<GpsSentence> = vec![GpsSenence];
+        /// let v: Vec<GpsSentence> = vec![/*GpsSentences*/];
         /// for s in v.iter() {
         ///     s.clone().append_to("vector");
         /// }
@@ -389,6 +390,7 @@ mod gps_test {
 
 
 #[cfg(test)]
+#[cfg(feature="std")]
 mod test_read_write {
     use std::fs::remove_file;
 

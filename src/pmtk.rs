@@ -104,9 +104,6 @@ pub mod send_pmtk {
         pub lcwn_lctow_tow: i8,
     }
 
-    const NMEA_MAX_SENTENCE_LEN: usize = 83; // from http://fort21.ru/download/NMEAdescription.pdf
-    pub(crate) type NmeaSentenceString = ArrayString<NMEA_MAX_SENTENCE_LEN>;
-
     const PMTK_MAX_SENTENCE_LEN: usize = 255; // from https://cdn.sparkfun.com/assets/parts/1/2/2/8/0/PMTK_Packet_User_Manual.pdf
     pub(crate) type PmtkSentenceString = ArrayString<PMTK_MAX_SENTENCE_LEN>;
 
@@ -115,17 +112,16 @@ pub mod send_pmtk {
     pub(crate) type GenericGpsSentenceBytes = ArrayVec<u8, GPS_MAX_SENTENCE_LEN>;
     
     /// Adds a $ and a checksum to a given string.
-    pub fn add_checksum(mut sentence: NmeaSentenceString) -> NmeaSentenceString {
+    pub fn add_checksum<const N: usize>(sentence: ArrayString<N>) -> ArrayString<N> {
         let mut checksum = 0;
         for char in sentence.as_bytes() {
             checksum ^= *char;
         }
-        use core::fmt::Write;
-        let mut checksum_ascii = ArrayString::<2>::new();
-        write!(checksum_ascii, "{:X}", checksum).unwrap(); //Format as hexidecimal.
-        write!(sentence, "${}*{}\r\n", sentence.clone(), checksum).unwrap();
-        sentence.make_ascii_uppercase();
-        return sentence;
+
+        let mut new_sentence = ArrayString::new();
+        write!(new_sentence, "${}*{:X}\r\n", sentence, checksum).unwrap();
+        new_sentence.make_ascii_uppercase();
+        return new_sentence;
     }
 
     /// Success (new baud rate) or fail.
@@ -166,7 +162,7 @@ pub mod send_pmtk {
                     _ => {
                         gps.pmtk_220_set_nmea_updaterate("1000");
                         use core::fmt::Write;
-                        let mut cmd = NmeaSentenceString::new();
+                        let mut cmd = PmtkSentenceString::new();
                         write!(cmd, "PMTK251,{}", baud_rate).unwrap();
                         let cmd = add_checksum(cmd);
                         let cmd = cmd.as_bytes();
@@ -181,15 +177,16 @@ pub mod send_pmtk {
     }
 
     /// This implies all the traits to do with sending commands to the gps.
+    #[allow(clippy::needless_lifetimes)] // Lifetime is only needless when std feature is enabled
     impl<'a, E: embedded_io::Error, T: embedded_hal::timer::CountDown<Time=Duration>> Gps<'a, E, T> {
         #[allow(unused_must_use)] // self.port.write is not used
         /// Send the PMTK command.
         pub fn send_command(&mut self, cmd: &str) {
             //! Input: no $ and no *checksum.
-            let cmd = add_checksum(NmeaSentenceString::from(cmd).unwrap());
+            let cmd = add_checksum(PmtkSentenceString::from(cmd).unwrap());
             let byte_cmd = cmd.as_bytes();
             #[cfg(feature="std")]
-            self.port.clear(serialport::ClearBuffer::Output); // Embedded Serial has no buffer
+            self.port.clear(serialport::ClearBuffer::Output); // Embedded Serial has no buffer, so only std SerialPort needs to be cleared
             self.port.write_all(byte_cmd);
         }
 
@@ -812,35 +809,33 @@ pub mod send_pmtk {
 
 #[cfg(test)]
 mod checksum_test {
+    use arrayvec::ArrayString;
+
     use crate::pmtk::send_pmtk::add_checksum;
-    use crate::pmtk::send_pmtk::NmeaSentenceString;
+    use crate::pmtk::send_pmtk::PmtkSentenceString;
+    const NMEA_MAX_SENTENCE_LEN: usize = 83; // from http://fort21.ru/download/NMEAdescription.pdf
 
     #[test]
     fn checksum() {
         assert_eq!(
             add_checksum(
-                NmeaSentenceString::from("GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,").unwrap()
+                ArrayString::<NMEA_MAX_SENTENCE_LEN>::from("GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,").unwrap()
             ),
-            NmeaSentenceString::from("$GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,*6A\r\n").unwrap()
+            ArrayString::<NMEA_MAX_SENTENCE_LEN>::from("$GNGGA,165419.000,5132.7378,N,00005.9192,W,1,7,1.93,34.4,M,47.0,M,,*6A\r\n").unwrap()
         );
-        assert_eq!(add_checksum(NmeaSentenceString::from("PMTK103").unwrap()), NmeaSentenceString::from("$PMTK103*30\r\n").unwrap())
+        assert_eq!(add_checksum(PmtkSentenceString::from("PMTK103").unwrap()), PmtkSentenceString::from("$PMTK103*30\r\n").unwrap())
     }
 }
 
 #[cfg(test)]
+#[cfg(feature="std")]
 mod pmtktests {
-    use core::convert::Infallible;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    use crate::pmtk::send_pmtk::set_baud_rate;
-
     use super::send_pmtk::{DgpsMode, EpoData, NmeaOutput, Pmtk001Ack, Sbas, SbasMode};
-    use super::super::open_gps::gps::{Gps, open_port};
+    use super::super::open_gps::gps::Gps;
 
-    fn port_setup<'a>() -> Gps<'a, Infallible> {
-        let _ = set_baud_rate("/dev/serial0", 9600);
-        sleep(Duration::from_secs(1));
+    fn port_setup<'a>() -> Gps<'a, core::convert::Infallible, crate::open_gps::gps::timer::Timer> {
+        let _ = crate::pmtk::send_pmtk::set_baud_rate("/dev/serial0", 9600);
+        std::thread::sleep(core::time::Duration::from_secs(1));
         let mut gps = Gps::new_from_device("/dev/serial0", 9600);
         gps.pmtk_220_set_nmea_updaterate("1000");
         return gps;

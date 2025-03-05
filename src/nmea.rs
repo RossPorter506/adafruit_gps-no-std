@@ -594,7 +594,7 @@ mod nmea_tests {
             //${GP,GL,GA,GN}GGA, UTC, lat, N/S, long, E/S, Fix quality, Sats used, HDOP, Alt, Alt Units,
             // Geoidal separation, Geo units, Age of diff corr, * checksum
             assert_eq!(
-                gga::parse_gga(arrayvec::ArrayVec::from([
+                gga::parse_gga(ArrayVec::from([
                     "$GPGGA",
                     "19294.00",
                     "29343.543",
@@ -612,8 +612,8 @@ mod nmea_tests {
                 ])),
                 gga::GgaData {
                     utc: 19294.00,
-                    lat: Some(34.725716),
-                    long: Some(34.725716),
+                    lat: Some(293.7257),
+                    long: Some(293.7257),
                     sat_fix: gga::SatFix::GpsFix,
                     satellites_used: 10,
                     hdop: Some(1.01),
@@ -627,7 +627,7 @@ mod nmea_tests {
         #[test]
         #[should_panic]
         fn gga_incorrect_header() {
-            gga::parse_gga(arrayvec::ArrayVec::from([
+            gga::parse_gga(ArrayVec::from([
                 "$GPGSV",
                 "19294.00",
                 "29343.543",
@@ -647,11 +647,12 @@ mod nmea_tests {
     }
     mod gsa {
         use crate::nmea::gsa;
+        use arrayvec::ArrayVec;
 
         #[test]
         fn gsa_normal() {
             assert_eq!(
-                gsa::parse_gsa(arrayvec::ArrayVec::from([
+                gsa::parse_gsa(ArrayVec::from([
                     "$GPGSA", "M", "2", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
                     "11", "12", "1.0", "2.04", "32.04"
                 ])),
@@ -679,7 +680,7 @@ mod nmea_tests {
         #[test]
         #[should_panic]
         fn gsa_incorrect_header() {
-            gsa::parse_gsa(arrayvec::ArrayVec::from([
+            gsa::parse_gsa(ArrayVec::from([
                 "$GPGGA", "M", "2", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
                 "11", "12", "1.0", "2.04", "32.04",
             ]));

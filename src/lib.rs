@@ -65,12 +65,15 @@
 //! ## Saving data
 //! GpsSentence types can be written and read to a bytes file using the the append_to() and read_from()
 //! traits: See examples/example_io.rs for details.
-//! ```
+//! ```no_run
+//! # #[cfg(feature = "std")]
+//! # {
 //! use adafruit_gps::GpsSentence;
 //! use adafruit_gps::gga::GgaData;
 //! let data: Vec<GpsSentence> = GpsSentence::read_from("file"); // Read from file
 //!
 //! GpsSentence::GGA(GgaData::default()).append_to("file"); // Append a single item to a file
+//! # }
 //! ```
 //!
 //!

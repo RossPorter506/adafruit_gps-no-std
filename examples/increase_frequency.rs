@@ -1,11 +1,10 @@
 extern crate adafruit_gps;
-use std::env;
 
 
-use adafruit_gps::Gps;
-use adafruit_gps::set_baud_rate;
-
+#[cfg(feature = "std")]
 fn main() {
+    use adafruit_gps::{Gps, set_baud_rate};
+    use std::env;
     // These args are just for easy testing for what baud rate and what update rate you want work.
 
     let args: Vec<String> = env::args().collect();
@@ -39,4 +38,9 @@ fn main() {
     // cat /dev/port -> prints out what that port is getting
     // stty -F /dev/port baud_rate clocal cread cs8 -cstopb -parenb -> sets the port baud rate
     // stty -F /dev/port -> prints out the port's current baud rate.
+}
+
+#[cfg(not(feature = "std"))]
+fn main() {
+    panic!("This example only works when the 'std' feature is enabled");
 }

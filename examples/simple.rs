@@ -1,11 +1,11 @@
 extern crate adafruit_gps;
 
-use std::env;
 
-use adafruit_gps::{Gps, GpsSentence};
-use adafruit_gps::NmeaOutput;
-
+#[cfg(feature = "std")]
 fn main() {
+    use adafruit_gps::{Gps, GpsSentence, NmeaOutput};
+    use std::env;
+    
     // Args are baud_rate, port name.
     let args: Vec<String> = env::args().collect();
     let baud_rate = args.get(1).unwrap();
@@ -52,4 +52,9 @@ fn main() {
             }
         }
     }
+}
+
+#[cfg(not(feature = "std"))]
+fn main() {
+    panic!("This example only works when the 'std' feature is enabled");
 }

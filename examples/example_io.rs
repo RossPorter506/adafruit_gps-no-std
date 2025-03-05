@@ -1,7 +1,8 @@
-use adafruit_gps::{Gps, GpsSentence};
-use adafruit_gps::NmeaOutput;
 
+#[cfg(feature = "std")]
 fn main() {
+    use adafruit_gps::{Gps, GpsSentence, NmeaOutput};
+
     let mut gps = Gps::new_from_device("/dev/serial0", 9600);
     gps.pmtk_220_set_nmea_updaterate("1000");
     gps.pmtk_314_api_set_nmea_output(NmeaOutput{ gll: 1, rmc: 0, vtg: 0, gga: 0, gsa: 1, gsv: 0, pmtkchn_interval: 0 });
@@ -22,5 +23,9 @@ fn main() {
     for s in v.iter() {
         s.clone().append_to("bench_test1")
     }
+}
 
+#[cfg(not(feature = "std"))]
+fn main() {
+    panic!("This example only works when the 'std' feature is enabled");
 }
