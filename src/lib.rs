@@ -78,7 +78,7 @@
 //!
 //!
 //!
-
+#![allow(clippy::needless_return)]
 #![no_std]
 #[cfg(feature="std")]
 extern crate std;

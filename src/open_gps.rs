@@ -206,9 +206,10 @@ pub mod gps {
             Gps { port: Serial::new(port, baud_rate), timer: timer::Timer::default() }
         }
     }
+    #[allow(clippy::needless_lifetimes)] // 'a isn't needless when using no-std
     impl<'a, E: embedded_io::Error, T: embedded_hal::timer::CountDown<Time=Duration>> Gps<'a, E, T> {
         #[cfg(not(feature="std"))]
-        pub fn new_from_peripheral<'serial:'a> (port: &'serial mut dyn EmbeddedSerial<Error=E>, timer: T) -> Self {
+        pub fn new_from_peripheral(port: &'a mut dyn EmbeddedSerial<Error=E>, timer: T) -> Self {
             Gps { port: Serial{port}, timer }
         }
 
