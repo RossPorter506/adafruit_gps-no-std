@@ -144,7 +144,7 @@ pub mod gga {
         pub lat: Option<f32>,
         pub long: Option<f32>,
         pub sat_fix: SatFix,
-        pub satellites_used: i32,
+        pub satellites_used: u8,
         pub hdop: Option<f32>,
         pub msl_alt: Option<f32>,
         pub geoidal_sep: Option<f32>,
@@ -175,11 +175,11 @@ pub mod gga {
             "2" => SatFix::DgpsFix,
             _ => SatFix::NoFix,
         };
-        let satellites_used: i32 = args.get(7).unwrap().parse().unwrap();
-        let hdop = args.get(8).unwrap().parse::<f32>().ok();
-        let msl_alt: Option<f32> = args.get(9).unwrap().parse::<f32>().ok();
-        let geoidal_sep: Option<f32> = args.get(11).unwrap().parse::<f32>().ok();
-        let age_diff_corr: Option<f32> = args.get(13).unwrap().parse::<f32>().ok();
+        let satellites_used: u8         = args.get( 7).unwrap().parse().unwrap();
+        let hdop: Option<f32>           = args.get( 8).unwrap().parse().ok();
+        let msl_alt: Option<f32>        = args.get( 9).unwrap().parse().ok();
+        let geoidal_sep: Option<f32>    = args.get(11).unwrap().parse().ok();
+        let age_diff_corr: Option<f32>  = args.get(13).unwrap().parse().ok();
         return GgaData {
             utc,
             lat,
@@ -234,18 +234,7 @@ pub mod gsa {
     pub struct GsaData {
         pub mode: Mode,
         pub dimension_fix: DimensionFix,
-        pub sat1: Option<i32>,
-        pub sat2: Option<i32>,
-        pub sat3: Option<i32>,
-        pub sat4: Option<i32>,
-        pub sat5: Option<i32>,
-        pub sat6: Option<i32>,
-        pub sat7: Option<i32>,
-        pub sat8: Option<i32>,
-        pub sat9: Option<i32>,
-        pub sat10: Option<i32>,
-        pub sat11: Option<i32>,
-        pub sat12: Option<i32>,
+        pub sat_ids: ArrayVec<Option<u8>, 12>,
         pub pdop: Option<f32>,
         pub hdop: Option<f32>,
         pub vdop: Option<f32>,
@@ -286,38 +275,20 @@ pub mod gsa {
             "3" => DimensionFix::Dimension3d,
             _ => DimensionFix::NotAvailable,
         };
-        let sat1: Option<i32>  = args.get(3).unwrap().parse::<i32>().ok();
-        let sat2: Option<i32>  = args.get(4).unwrap().parse::<i32>().ok();
-        let sat3: Option<i32>  = args.get(5).unwrap().parse::<i32>().ok();
-        let sat4: Option<i32>  = args.get(6).unwrap().parse::<i32>().ok();
-        let sat5: Option<i32>  = args.get(7).unwrap().parse::<i32>().ok();
-        let sat6: Option<i32>  = args.get(8).unwrap().parse::<i32>().ok();
-        let sat7: Option<i32>  = args.get(9).unwrap().parse::<i32>().ok();
-        let sat8: Option<i32>  = args.get(10).unwrap().parse::<i32>().ok();
-        let sat9: Option<i32>  = args.get(11).unwrap().parse::<i32>().ok();
-        let sat10: Option<i32> = args.get(12).unwrap().parse::<i32>().ok();
-        let sat11: Option<i32> = args.get(13).unwrap().parse::<i32>().ok();
-        let sat12: Option<i32> = args.get(14).unwrap().parse::<i32>().ok();
 
-        let pdop: Option<f32>  = args.get(15).unwrap().parse::<f32>().ok();
-        let hdop: Option<f32>  = args.get(16).unwrap().parse::<f32>().ok();
-        let vdop: Option<f32>  = args.get(17).unwrap().parse::<f32>().ok();
+        let mut sat_ids = ArrayVec::new();
+        for i in 3..=14 {
+            sat_ids.push(args.get(i).unwrap().parse().ok());
+        }
+
+        let pdop: Option<f32> = args.get(15).unwrap().parse().ok();
+        let hdop: Option<f32> = args.get(16).unwrap().parse().ok();
+        let vdop: Option<f32> = args.get(17).unwrap().parse().ok();
 
         return GsaData {
             mode,
             dimension_fix,
-            sat1,
-            sat2,
-            sat3,
-            sat4,
-            sat5,
-            sat6,
-            sat7,
-            sat8,
-            sat9,
-            sat10,
-            sat11,
-            sat12,
+            sat_ids,
             pdop,
             hdop,
             vdop,
@@ -342,10 +313,10 @@ pub mod gsv {
     /// - snr -> Signal to Noise ratio: Signal / Noise , 0-99, null if not tracking.
     #[derive(PartialEq, Debug, Default, Serialize, Deserialize, Clone)]
     pub struct Satellite {
-        pub id: Option<i32>,
-        pub elevation: Option<f32>,
-        pub azimuth: Option<f32>,
-        pub snr: Option<f32>,
+        pub id: u8,
+        pub elevation: Option<i8>,
+        pub azimuth: Option<u16>,
+        pub snr: Option<u8>,
     }
 
     pub fn parse_gsv(args: ArrayVec<&str, 20>) -> ArrayVec<Satellite, 4> {
@@ -373,24 +344,22 @@ pub mod gsv {
         }
         let mut values = ArrayVec::new();
         let _meta = &args.get(0..4);
-        let sat1 = &args.get(4..8);
-        let sat2 = &args.get(8..12);
-        let sat3 = &args.get(12..16);
-        let sat4 = &args.get(16..20);
-        for sat in &[sat1, sat2, sat3, sat4] {
-            if sat.is_some() {
-                values.push(parse_sat(sat.unwrap()))
-            }
+        let sat1 = args.get(4..8);
+        let sat2 = args.get(8..12);
+        let sat3 = args.get(12..16);
+        let sat4 = args.get(16..20);
+        for sat in [sat1, sat2, sat3, sat4].iter().flatten() {
+            values.push(parse_sat(sat))
         }
         values
     }
 
     fn parse_sat(args: &[&str]) -> Satellite {
         Satellite {
-            id: args.get(0).unwrap().parse().ok(),
-            elevation: args.get(1).unwrap().parse().ok(),
-            azimuth: args.get(2).unwrap().parse().ok(),
-            snr: args.get(3).unwrap().parse().ok(),
+            id:         args.get(0).unwrap().parse().unwrap(),
+            elevation:  args.get(1).unwrap().parse().ok(),
+            azimuth:    args.get(2).unwrap().parse().ok(),
+            snr:        args.get(3).unwrap().parse().ok(),
         }
     }
 }
@@ -659,18 +628,7 @@ mod nmea_tests {
                 gsa::GsaData {
                     mode: gsa::Mode::Manual,
                     dimension_fix: gsa::DimensionFix::Dimension2d,
-                    sat1: Some(1),
-                    sat2: Some(2),
-                    sat3: Some(3),
-                    sat4: Some(4),
-                    sat5: Some(5),
-                    sat6: Some(6),
-                    sat7: Some(7),
-                    sat8: Some(8),
-                    sat9: Some(9),
-                    sat10: Some(10),
-                    sat11: Some(11),
-                    sat12: Some(12),
+                    sat_ids: ArrayVec::from( [1,2,3,4,5,6,7,8,9,10,11,12].map(|n| Some(n)) ),
                     pdop: Some(1.0),
                     hdop: Some(2.04),
                     vdop: Some(32.04)
