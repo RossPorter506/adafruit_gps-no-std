@@ -397,6 +397,7 @@ pub mod send_pmtk {
         /// - ...
         /// - 5 -> Every 5th output
         pub fn pmtk_314_api_set_nmea_output(&mut self, output: NmeaOutput) -> Pmtk001Ack {
+            //! 
             //! 19 fields can be parsed to this one.
             //!
             //! $PMTK314,{GPGLL},{GPRMC},{GPTVG},{GPGGA},{GPGAS},{GPGSV},{R}..6-17,{PMTKCHN interval}
