@@ -348,7 +348,7 @@ pub mod gsv {
         pub snr: Option<f32>,
     }
 
-    pub fn parse_gsv(args: ArrayVec<&str, 20>) -> ArrayVec<Satellite, {crate::open_gps::gps::MAX_SATELLITES}> {
+    pub fn parse_gsv(args: ArrayVec<&str, 20>) -> ArrayVec<Satellite, 4> {
         //! Format $GPGSV, Number of messages, Message number, Sats in view,
         //!      sat ID, Sat elevation, Sat Azimuth, Sat SNE, Repeat 4 times, *checksum
         //!

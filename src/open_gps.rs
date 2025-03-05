@@ -283,16 +283,14 @@ pub mod gps {
                             // Assumes that each GSV sentence if given in exact sequence, and not out of order.
                             let number_of_messages: i32 = sentence.get(1).unwrap().parse().unwrap();
 
-                            let mut gsv_values: ArrayVec<Satellite, MAX_SATELLITES> = parse_gsv(sentence); // First sentence
+                            let mut gsv_values = ArrayVec::new();
+                            gsv_values.extend(parse_gsv(sentence)); // First sentence
                             for _message in 1..number_of_messages { // If number of messages is 1, this is all skipped.
                                 // Read lines and add it for each message.
                                 let line = self.read_line();
                                 if let PortConnection::Valid(line) = line {
-                                    let sentence = parse_sentence(line.as_str());
-                                    let sentence = sentence.unwrap();
-                                    for sat in parse_gsv(sentence) {
-                                        gsv_values.push(sat);
-                                    }
+                                    let sentence = parse_sentence(line.as_str()).unwrap();
+                                    gsv_values.extend(parse_gsv(sentence));
                                 };
                             }
                             return GpsSentence::GSV(gsv_values);
